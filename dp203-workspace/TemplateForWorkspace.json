@@ -22,6 +22,347 @@
 	},
 	"resources": [
 		{
+			"name": "[concat(parameters('workspaceName'), '/transformation')]",
+			"type": "Microsoft.Synapse/workspaces/bigDataPools",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"annotations": []
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Pipeline 1')]",
+			"type": "Microsoft.Synapse/workspaces/pipelines",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"activities": [
+					{
+						"name": "pipeline_csv",
+						"type": "ExecutePipeline",
+						"dependsOn": [],
+						"policy": {
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"pipeline": {
+								"referenceName": "pipeline_csv",
+								"type": "PipelineReference"
+							},
+							"waitOnCompletion": true,
+							"parameters": {}
+						}
+					},
+					{
+						"name": "pipeline_json",
+						"type": "ExecutePipeline",
+						"dependsOn": [
+							{
+								"activity": "pipeline_csv",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"pipeline": {
+								"referenceName": "pipeline_json",
+								"type": "PipelineReference"
+							},
+							"waitOnCompletion": true,
+							"parameters": {}
+						}
+					},
+					{
+						"name": "pipeline_parquet",
+						"type": "ExecutePipeline",
+						"dependsOn": [
+							{
+								"activity": "pipeline_json",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"pipeline": {
+								"referenceName": "pipeline_parquet",
+								"type": "PipelineReference"
+							},
+							"waitOnCompletion": true,
+							"parameters": {}
+						}
+					},
+					{
+						"name": "transformationnotebook",
+						"type": "SynapseNotebook",
+						"dependsOn": [
+							{
+								"activity": "pipeline_parquet",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"notebook": {
+								"referenceName": "Notebooktransformtion",
+								"type": "NotebookReference"
+							},
+							"snapshot": true,
+							"sparkPool": {
+								"referenceName": "transformation",
+								"type": "BigDataPoolReference"
+							},
+							"executorSize": "Small",
+							"conf": {
+								"spark.dynamicAllocation.enabled": true
+							},
+							"driverSize": "Small"
+						}
+					},
+					{
+						"name": "output_pipeline",
+						"type": "ExecutePipeline",
+						"dependsOn": [
+							{
+								"activity": "transformationnotebook",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"pipeline": {
+								"referenceName": "output_pipeline",
+								"type": "PipelineReference"
+							},
+							"waitOnCompletion": true,
+							"parameters": {}
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/pipelines/pipeline_csv')]",
+				"[concat(variables('workspaceId'), '/pipelines/pipeline_json')]",
+				"[concat(variables('workspaceId'), '/pipelines/pipeline_parquet')]",
+				"[concat(variables('workspaceId'), '/notebooks/Notebooktransformtion')]",
+				"[concat(variables('workspaceId'), '/bigDataPools/transformation')]",
+				"[concat(variables('workspaceId'), '/pipelines/output_pipeline')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/output_pipeline')]",
+			"type": "Microsoft.Synapse/workspaces/pipelines",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"activities": [
+					{
+						"name": "Copy_08o",
+						"type": "Copy",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [
+							{
+								"name": "Source",
+								"value": "dp203-datalakegen2/data_transformed/"
+							},
+							{
+								"name": "Destination",
+								"value": "dbo.Data_Transformed_Output"
+							}
+						],
+						"typeProperties": {
+							"source": {
+								"type": "DelimitedTextSource",
+								"storeSettings": {
+									"type": "AzureBlobFSReadSettings",
+									"recursive": true,
+									"wildcardFileName": "*",
+									"enablePartitionDiscovery": false
+								},
+								"formatSettings": {
+									"type": "DelimitedTextReadSettings",
+									"skipLineCount": 0
+								}
+							},
+							"sink": {
+								"type": "SqlPoolSink",
+								"writeBehavior": "Upsert",
+								"upsertSettings": {
+									"keys": [
+										"sale_id",
+										"product_id"
+									],
+									"interimSchemaName": ""
+								}
+							},
+							"enableStaging": false,
+							"translator": {
+								"type": "TabularTranslator",
+								"mappings": [
+									{
+										"source": {
+											"name": "sale_id",
+											"type": "String",
+											"physicalType": "String"
+										},
+										"sink": {
+											"name": "sale_id",
+											"type": "String",
+											"physicalType": "varchar"
+										}
+									},
+									{
+										"source": {
+											"name": "product_id",
+											"type": "String",
+											"physicalType": "String"
+										},
+										"sink": {
+											"name": "product_id",
+											"type": "String",
+											"physicalType": "varchar"
+										}
+									},
+									{
+										"source": {
+											"name": "product_name",
+											"type": "String",
+											"physicalType": "String"
+										},
+										"sink": {
+											"name": "product_name",
+											"type": "String",
+											"physicalType": "varchar"
+										}
+									},
+									{
+										"source": {
+											"name": "quantity",
+											"type": "String",
+											"physicalType": "String"
+										},
+										"sink": {
+											"name": "quantity",
+											"type": "String",
+											"physicalType": "varchar"
+										}
+									},
+									{
+										"source": {
+											"name": "price",
+											"type": "String",
+											"physicalType": "String"
+										},
+										"sink": {
+											"name": "price",
+											"type": "String",
+											"physicalType": "varchar"
+										}
+									},
+									{
+										"source": {
+											"name": "total_amount",
+											"type": "String",
+											"physicalType": "String"
+										},
+										"sink": {
+											"name": "total_amount",
+											"type": "String",
+											"physicalType": "varchar"
+										}
+									},
+									{
+										"source": {
+											"name": "sale_date",
+											"type": "String",
+											"physicalType": "String"
+										},
+										"sink": {
+											"name": "sale_date",
+											"type": "String",
+											"physicalType": "varchar"
+										}
+									},
+									{
+										"source": {
+											"name": "region",
+											"type": "String",
+											"physicalType": "String"
+										},
+										"sink": {
+											"name": "region",
+											"type": "String",
+											"physicalType": "varchar"
+										}
+									}
+								],
+								"typeConversion": true,
+								"typeConversionSettings": {
+									"allowDataTruncation": true,
+									"treatBooleanAsNumber": false
+								}
+							}
+						},
+						"inputs": [
+							{
+								"referenceName": "SourceDataset_08o",
+								"type": "DatasetReference",
+								"parameters": {}
+							}
+						],
+						"outputs": [
+							{
+								"referenceName": "DestinationDataset_08o",
+								"type": "DatasetReference",
+								"parameters": {}
+							}
+						]
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/datasets/SourceDataset_08o')]",
+				"[concat(variables('workspaceId'), '/datasets/DestinationDataset_08o')]"
+			]
+		},
+		{
 			"name": "[concat(parameters('workspaceName'), '/pipeline_csv')]",
 			"type": "Microsoft.Synapse/workspaces/pipelines",
 			"apiVersion": "2019-06-01-preview",
@@ -552,6 +893,60 @@
 			]
 		},
 		{
+			"name": "[concat(parameters('workspaceName'), '/DestinationDataset_08o')]",
+			"type": "Microsoft.Synapse/workspaces/datasets",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"annotations": [],
+				"type": "SqlPoolTable",
+				"schema": [
+					{
+						"name": "sale_id",
+						"type": "varchar"
+					},
+					{
+						"name": "product_id",
+						"type": "varchar"
+					},
+					{
+						"name": "product_name",
+						"type": "varchar"
+					},
+					{
+						"name": "quantity",
+						"type": "varchar"
+					},
+					{
+						"name": "price",
+						"type": "varchar"
+					},
+					{
+						"name": "total_amount",
+						"type": "varchar"
+					},
+					{
+						"name": "sale_date",
+						"type": "varchar"
+					},
+					{
+						"name": "region",
+						"type": "varchar"
+					}
+				],
+				"typeProperties": {
+					"schema": "dbo",
+					"table": "Data_Transformed_Output"
+				},
+				"sqlPool": {
+					"referenceName": "dedicatedsqlashutosh",
+					"type": "SqlPoolReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/sqlPools/dedicatedsqlashutosh')]"
+			]
+		},
+		{
 			"name": "[concat(parameters('workspaceName'), '/DestinationDataset_0t4')]",
 			"type": "Microsoft.Synapse/workspaces/datasets",
 			"apiVersion": "2019-06-01-preview",
@@ -765,6 +1160,79 @@
 			},
 			"dependsOn": [
 				"[concat(variables('workspaceId'), '/sqlPools/dedicatedsqlashutosh')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/SourceDataset_08o')]",
+			"type": "Microsoft.Synapse/workspaces/datasets",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "dp203-workspace-WorkspaceDefaultStorage",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "DelimitedText",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobFSLocation",
+						"folderPath": "data_transformed",
+						"fileSystem": "dp203-datalakegen2"
+					},
+					"columnDelimiter": ",",
+					"escapeChar": "\\",
+					"firstRowAsHeader": true,
+					"quoteChar": "\""
+				},
+				"schema": [
+					{
+						"name": "sale_id",
+						"type": "String"
+					},
+					{
+						"name": "product_id",
+						"type": "String"
+					},
+					{
+						"name": "product_name",
+						"type": "String"
+					},
+					{
+						"name": "quantity",
+						"type": "String"
+					},
+					{
+						"name": "price",
+						"type": "String"
+					},
+					{
+						"name": "total_amount",
+						"type": "String"
+					},
+					{
+						"name": "sale_date",
+						"type": "String"
+					},
+					{
+						"name": "region",
+						"type": "String"
+					},
+					{
+						"name": "source",
+						"type": "String"
+					},
+					{
+						"name": "sale_date_new",
+						"type": "String"
+					},
+					{
+						"name": "year",
+						"type": "String"
+					}
+				]
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/linkedServices/dp203-workspace-WorkspaceDefaultStorage')]"
 			]
 		},
 		{
@@ -49147,6 +49615,191 @@
 				}
 			},
 			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/SQL script 2')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "SET ANSI_NULLS ON\nGO\nSET QUOTED_IDENTIFIER ON\nGO\n\nCREATE TABLE [dbo].[Data_Transformed_Output]\n( \n\t[sale_id] [varchar](50)  NOT NULL,\n\t[product_id] [varchar](50)  NULL,\n\t[product_name] [varchar](200)  NULL,\n\t[quantity] [varchar](50)  NULL,\n\t[price] [varchar](50)  NULL,\n\t[total_amount] [varchar](50)  NULL,\n\t[sale_date] [varchar](50)  NULL,\n\t[region] [varchar](50)  NULL\n)\nWITH\n(\n\tDISTRIBUTION = HASH ( [sale_id] ),\n\tCLUSTERED COLUMNSTORE INDEX\n)\nGO",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "dedicatedsqlashutosh",
+						"poolName": "dedicatedsqlashutosh"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/SQL script 3')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "SELECT TOP (100) [sale_id]\n,[product_id]\n,[product_name]\n,[quantity]\n,[price]\n,[total_amount]\n,[sale_date]\n,[region]\n FROM [dbo].[Data_Transformed_Output]",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "dedicatedsqlashutosh",
+						"poolName": "dedicatedsqlashutosh"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Notebooktransformtion')]",
+			"type": "Microsoft.Synapse/workspaces/notebooks",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"nbformat": 4,
+				"nbformat_minor": 2,
+				"bigDataPool": {
+					"referenceName": "transformation",
+					"type": "BigDataPoolReference"
+				},
+				"sessionProperties": {
+					"driverMemory": "28g",
+					"driverCores": 4,
+					"executorMemory": "28g",
+					"executorCores": 4,
+					"numExecutors": 2,
+					"conf": {
+						"spark.dynamicAllocation.enabled": "false",
+						"spark.dynamicAllocation.minExecutors": "2",
+						"spark.dynamicAllocation.maxExecutors": "2",
+						"spark.autotune.trackingId": "eb92d4cc-9183-4332-a398-4021a6ff2877"
+					}
+				},
+				"metadata": {
+					"saveOutput": true,
+					"enableDebugMode": false,
+					"kernelspec": {
+						"name": "synapse_pyspark",
+						"display_name": "Synapse PySpark"
+					},
+					"language_info": {
+						"name": "python"
+					},
+					"a365ComputeOptions": {
+						"id": "/subscriptions/22359ed0-7876-494f-a6e1-480cfe66e550/resourceGroups/dp203-ashutosh/providers/Microsoft.Synapse/workspaces/dp203-workspace/bigDataPools/transformation",
+						"name": "transformation",
+						"type": "Spark",
+						"endpoint": "https://dp203-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/transformation",
+						"auth": {
+							"type": "AAD",
+							"authResource": "https://dev.azuresynapse.net"
+						},
+						"sparkVersion": "3.4",
+						"nodeCount": 10,
+						"cores": 4,
+						"memory": 28
+					},
+					"sessionKeepAliveTimeout": 30
+				},
+				"cells": [
+					{
+						"cell_type": "code",
+						"metadata": {
+							"jupyter": {
+								"source_hidden": false,
+								"outputs_hidden": false
+							},
+							"nteract": {
+								"transient": {
+									"deleting": false
+								}
+							},
+							"microsoft": {
+								"language": "scala"
+							}
+						},
+						"source": [
+							"%%spark\r\n",
+							"import org.apache.spark.sql.functions.trim\r\n",
+							"import org.apache.spark.sql.functions.{col, date_format}\r\n",
+							"\r\n",
+							"\r\n",
+							"//Reading data from staging tables\r\n",
+							"var ot_df = spark.read.synapsesql(\"dedicatedsqlashutosh.dbo.salesjson\") \r\n",
+							"ot_df = ot_df.withColumn(\"source\", lit(\"Json\"))\r\n",
+							"\r\n",
+							"var csv_df = spark.read.synapsesql(\"dedicatedsqlashutosh.dbo.salescsv\") \r\n",
+							"csv_df = csv_df.withColumn(\"source\", lit(\"CSV\"))\r\n",
+							"\r\n",
+							"var parq_df = spark.read.synapsesql(\"dedicatedsqlashutosh.dbo.salesparquet\") \r\n",
+							"parq_df = parq_df.withColumn(\"source\", lit(\"Parquet\"))\r\n",
+							"\r\n",
+							"//Appending the dataframes\r\n",
+							"var df = ot_df.union(csv_df).union(parq_df)\r\n",
+							"\r\n",
+							"//Replacing NULL Values\r\n",
+							"df = df.withColumn(\"quantity\", when(col(\"quantity\").isNull,col(\"total_amount\")/col(\"price\")).otherwise(col(\"quantity\")))\r\n",
+							"\r\n",
+							"df = df.withColumn(\"price\", when(col(\"price\").isNull,col(\"total_amount\")/col(\"quantity\")).otherwise(col(\"price\")))\r\n",
+							"\r\n",
+							"df = df.withColumn(\"total_amount\", when(col(\"total_amount\").isNull,col(\"price\")*col(\"quantity\")).otherwise(col(\"total_amount\")))\r\n",
+							"\r\n",
+							"//Removing time from data column\r\n",
+							"df = df.withColumn(\"sale_date_new\", split(col(\"sale_date\"), \" \").getItem(0))\r\n",
+							"\r\n",
+							"//Creating year column from sale date\r\n",
+							"df = df.withColumn(\"year\", split(col(\"sale_date_new\"), \"-\").getItem(0))\r\n",
+							"\r\n",
+							"//Rounding price,amount to decimal places\r\n",
+							"df = df.withColumn(\"total_amount\", bround(col(\"total_amount\"), 2))\r\n",
+							"df = df.withColumn(\"price\", bround(col(\"price\"), 2))\r\n",
+							"df = df.withColumn(\"quantity\",bround(col(\"quantity\"),0))\r\n",
+							"\r\n",
+							"val adlsPath = \"abfss://dp203-datalakegen2@ashutoshstorage1.dfs.core.windows.net/data_transformed/Data_Transformed.csv\"\r\n",
+							"\r\n",
+							"// Write DataFrame to ADLS in CSV format\r\n",
+							"df.write\r\n",
+							"  .format(\"csv\")\r\n",
+							"  .option(\"header\", \"true\")\r\n",
+							"  .mode(\"overwrite\")\r\n",
+							"  .save(adlsPath)"
+						],
+						"outputs": [],
+						"execution_count": 16
+					}
+				]
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/transformation')]",
+			"type": "Microsoft.Synapse/workspaces/bigDataPools",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"autoPause": {
+					"enabled": true,
+					"delayInMinutes": 15
+				},
+				"autoScale": {
+					"enabled": true,
+					"maxNodeCount": 3,
+					"minNodeCount": 3
+				},
+				"nodeCount": 10,
+				"nodeSize": "Small",
+				"nodeSizeFamily": "MemoryOptimized",
+				"sparkVersion": "3.4",
+				"isComputeIsolationEnabled": false,
+				"sessionLevelPackagesEnabled": false,
+				"annotations": []
+			},
+			"dependsOn": [],
+			"location": "eastus2"
 		},
 		{
 			"name": "[concat(parameters('workspaceName'), '/dedicatedsqlashutosh')]",
